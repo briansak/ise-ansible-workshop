@@ -1,0 +1,46 @@
+---
+- hosts: ise
+  gather_facts: false
+
+  tasks:
+    - name: Create Network Device Group
+      cisco.ise.network_device_group:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+        state: present
+        description: "Retail"
+        name: "Departments#Departments#Retail"
+        othername: "Departments"
+      register: result_dept
+
+    - name: Show results
+      ansible.builtin.debug:
+        msg: "{{ result_dept }}"
+        
+    - name: Create Network Device
+      cisco.ise.network_device:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+        state: present
+        NetworkDeviceGroupList:
+        - Departments#Departments#Retail
+        NetworkDeviceIPList:
+        - ipaddress: 10.10.20.32
+          mask: 32
+        authenticationSettings:
+          dtlsRequired: true
+          enableKeyWrap: true
+          keyEncryptionKey: "{{ keyEncryptionKey }}"
+          keyInputFormat: ASCII
+          messageAuthenticatorCodeKey: "{{ macKey }}"
+          radiusSharedSecret: "{{ radiusSharedSecret }}"
+        name: retail_switch_1
+      register: result_device
+      
+    - name: Show results
+      ansible.builtin.debug:
+        msg: "{{ result_device }}"
