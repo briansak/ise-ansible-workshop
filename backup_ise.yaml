@@ -1,0 +1,34 @@
+---
+- hosts: ise
+  gather_facts: false
+  
+  tasks:
+    - name: Get Node Info
+      cisco.ise.node_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+        id: 03b760d0-48fd-11ef-a0d1-005056bf2f23
+      register: node_info
+
+    - name: Get Patch Info
+      cisco.ise.patch_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+      register: patch_info
+
+    - name: Show Patch Info Results
+      ansible.builtin.debug: 
+        msg: 
+        - "{{ node_info }}"
+        - "ISE version: {{ patch_info.ise_response.iseVersion }}, Patch {{ patch_info.ise_response.patchVersion }}"
+
+    - name: Create New Backup
+      cisco.ise.backup_config:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
