@@ -1,0 +1,128 @@
+---
+- hosts: ise
+  gather_facts: false
+
+  tasks:
+
+    - name: Get Node Info
+      cisco.ise.node_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+      register: node_info
+
+    - name: Set node facts
+      set_fact:
+        node_id: "{{ node_info.ise_response[0].id }}"
+        
+    - name: Get Patch Info
+      cisco.ise.patch_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+      register: patch_info
+
+    - name: Show Patch Info Results
+      ansible.builtin.debug:
+        msg:
+          - "Node ID: {{ node_id }}"
+          - "ISE version: {{ patch_info.ise_response.iseVersion }}, Patch {{ patch_info.ise_response.patchVersion }}"
+
+    - name: Create New Backup
+      cisco.ise.backup_config:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+        backupEncryptionKey: "{{ backup_key }}"
+        backupName: "ise_backup"
+        repositoryName: ISE_Backup
+      register: backup
+
+    - name: Get Tasks by ID
+      cisco.ise.tasks_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+        taskId: "{{ backup.ise_response.response.id }}"
+      register: task
+
+    - name: Print Task Status
+      ansible.builtin.debug:
+        msg: "{{ task }}"
+
+    - name: Wait For Backup To Complete
+      cisco.ise.backup_last_status_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+      register: backup_status
+      until: backup_status.ise_response.status != 'IN_PROGRESS'
+      retries: 360
+      delay: 10
+      failed_when: backup_status.ise_response.justComplete != 'yes'
+
+    - name: Print Backup Results
+      ansible.builtin.debug:
+        msg: "{{ backup_status }}"
+
+    - name: Install ISE Patch 3.3 Patch 11
+      cisco.ise.patch_install:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+        patchName: "ise-patchbundle-3.3.0.430-Patch11-26041004.SPA.x86_64.tar.gz"
+        repositoryName: ISE_Backup
+      register: patch_install
+
+    - name: Print Patch Install Results
+      ansible.builtin.debug:
+        msg: "{{ patch_install }}"
+
+    - name: Wait For ISE Application Services To Go Down (restart initiated)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 443
+        state: stopped
+        timeout: 600       # up to 10 minutes for services to stop
+        delay: 30          # give the patch task time to begin shutdown
+      delegate_to: localhost
+
+    - name: Wait For ISE Application Services To Come Back Online
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 443
+        state: started
+        timeout: 3600      # up to 60 minutes for services to come back
+        delay: 60
+      delegate_to: localhost
+
+    - name: Wait For ISE API To Respond Successfully
+      cisco.ise.patch_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+      register: post_patch_info
+      until:
+        - post_patch_info.ise_response is defined
+        - post_patch_info.ise_response.patchVersion is defined
+      retries: 60         # 60 * 30s = up to 30 minutes for API readiness
+      delay: 30
+      ignore_errors: true
+
+    - name: Confirm Patch 11 Is Installed
+      ansible.builtin.assert:
+        that:
+          - post_patch_info.ise_response.patchVersion | int == 11
+        success_msg: "ISE successfully upgraded to {{ post_patch_info.ise_response.iseVersion }} Patch {{ post_patch_info.ise_response.patchVersion }}"
+        fail_msg: "Patch installation could not be confirmed. Current patch version: {{ post_patch_info.ise_response.patchVersion | default('unknown') }}"
+
+    - name: Print Post-Patch Status
+      ansible.builtin.debug:
+        msg: "ISE version: {{ post_patch_info.ise_response.iseVersion }}, Patch {{ post_patch_info.ise_response.patchVersion }}"
