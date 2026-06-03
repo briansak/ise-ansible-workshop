@@ -2,7 +2,21 @@
 - hosts: ise
   gather_facts: false
 
+  vars:
+    switches_csv: "switches.csv"
+
   tasks:
+    - name: Read switches from CSV
+      community.general.read_csv:
+        path: "{{ switches_csv }}"
+      register: switches_data
+      delegate_to: localhost
+      run_once: true
+
+    - name: Show parsed CSV data
+      ansible.builtin.debug:
+        msg: "{{ switches_data.list }}"
+
     - name: Create Network Device Group
       cisco.ise.network_device_group:
         ise_hostname: "{{ ansible_host }}"
@@ -15,11 +29,11 @@
         othername: "Departments"
       register: result_dept
 
-    - name: Show results
+    - name: Show group results
       ansible.builtin.debug:
         msg: "{{ result_dept }}"
-        
-    - name: Create Network Device
+
+    - name: Create Network Devices from CSV
       cisco.ise.network_device:
         ise_hostname: "{{ ansible_host }}"
         ise_username: "{{ ise_username }}"
@@ -27,10 +41,10 @@
         ise_verify: "false"
         state: present
         NetworkDeviceGroupList:
-        - Departments#Departments#Retail
+          - "{{ item.group }}"
         NetworkDeviceIPList:
-        - ipaddress: 10.10.20.32
-          mask: 32
+          - ipaddress: "{{ item.ip }}"
+            mask: "{{ item.mask | int }}"
         authenticationSettings:
           dtlsRequired: true
           enableKeyWrap: true
@@ -38,9 +52,8 @@
           keyInputFormat: ASCII
           messageAuthenticatorCodeKey: "{{ macKey }}"
           radiusSharedSecret: "{{ radiusSharedSecret }}"
-        name: retail_switch_1
-      register: result_device
-      
-    - name: Show results
-      ansible.builtin.debug:
-        msg: "{{ result_device }}"
+        name: "{{ item.name }}"
+      loop: "{{ switches_data.list }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.ip }})"
+      register: result_devices
