@@ -1,7 +1,7 @@
 ---
 - hosts: ise
   gather_facts: false
-    
+
   tasks:
     - name: Create Endpoint Identity Group
       cisco.ise.endpoint_group:
@@ -14,7 +14,7 @@
         name: Point-of-Sale
         systemDefined: false
       register: endpoint_group
-  
+
     - name: Create Endpoint
       cisco.ise.endpoint:
         ise_hostname: "{{ ansible_host }}"
@@ -28,7 +28,7 @@
         identityStore: Point-of-Sale
         identityStoreId: "{{ endpoint_group.ise_response.id }}"
         staticGroupAssignment: true
-       
+
     - name: Create Library Condition
       cisco.ise.network_access_conditions:
         ise_hostname: "{{ ansible_host }}"
@@ -46,7 +46,20 @@
         name: PCI-Devices
         operator: equals
       register: condition
-  
+
+    - name: Look up Wired_MAB condition ID
+      cisco.ise.network_access_conditions_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: "false"
+        name: Wired_MAB
+      register: wired_mab_lookup
+
+    - name: Set Wired_MAB ID fact
+      ansible.builtin.set_fact:
+        wired_mab_id: "{{ wired_mab_lookup.ise_response.id }}"
+
     - name: Create Network Policy Set
       cisco.ise.network_access_policy_set:
         ise_hostname: "{{ ansible_host }}"
@@ -59,7 +72,7 @@
           isNegate: false
           name: Wired_MAB
           description: PCI Policy Set
-          id: 8a9e89f0-4592-4148-be4a-ea4364a2b50a
+          id: "{{ wired_mab_id }}"
           default: false
         description: PCI Devices
         isProxy: false
@@ -67,7 +80,7 @@
         serviceName: Default Network Access
         name: PCI Policy Set
       register: policy_set
-      
+
     - name: Create Network Access Authn Policy
       cisco.ise.network_access_authentication_rules:
         ise_hostname: "{{ ansible_host }}"
@@ -84,7 +97,7 @@
           rank: 0
           state: enabled
         policyId: "{{ policy_set.ise_response.id }}"
-     
+
     - name: Create Network Access Authz Policy
       cisco.ise.network_access_authorization_rules:
         ise_hostname: "{{ ansible_host }}"
@@ -108,7 +121,7 @@
 
     - name: Display Results
       ansible.builtin.debug:
-        msg: 
+        msg:
           - "New endpoint group {{ endpoint_group.ise_response.name }} created."
           - "New library condition {{ condition.ise_response.name }} created."
           - "New network policy set {{ policy_set.ise_response.name }} created."
