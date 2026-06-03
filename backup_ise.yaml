@@ -1,34 +1,71 @@
 ---
 - hosts: ise
   gather_facts: false
-  
+
   tasks:
+
     - name: Get Node Info
       cisco.ise.node_info:
         ise_hostname: "{{ ansible_host }}"
         ise_username: "{{ ise_username }}"
         ise_password: "{{ ise_password }}"
-        ise_verify: "false"
-        id: 03b760d0-48fd-11ef-a0d1-005056bf2f23
+        ise_verify: false
       register: node_info
 
+    - name: Set node facts
+      set_fact:
+        node_id: "{{ node_info.ise_response[0].id }}"
+        
     - name: Get Patch Info
       cisco.ise.patch_info:
         ise_hostname: "{{ ansible_host }}"
         ise_username: "{{ ise_username }}"
         ise_password: "{{ ise_password }}"
-        ise_verify: "false"
+        ise_verify: false
       register: patch_info
 
     - name: Show Patch Info Results
-      ansible.builtin.debug: 
-        msg: 
-        - "{{ node_info }}"
-        - "ISE version: {{ patch_info.ise_response.iseVersion }}, Patch {{ patch_info.ise_response.patchVersion }}"
+      ansible.builtin.debug:
+        msg:
+          - "Node ID: {{ node_id }}"
+          - "ISE version: {{ patch_info.ise_response.iseVersion }}, Patch {{ patch_info.ise_response.patchVersion }}"
 
     - name: Create New Backup
       cisco.ise.backup_config:
         ise_hostname: "{{ ansible_host }}"
         ise_username: "{{ ise_username }}"
         ise_password: "{{ ise_password }}"
-        ise_verify: "false"
+        ise_verify: false
+        backupEncryptionKey: "{{ backup_key }}"
+        backupName: "ise_backup"
+        repositoryName: ISE_Backup
+      register: backup
+
+    - name: Get Tasks by ID
+      cisco.ise.tasks_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+        taskId: "{{ backup.ise_response.response.id }}"
+      register: task
+
+    - name: Print Task Status
+      ansible.builtin.debug:
+        msg: "{{ task }}"
+
+    - name: Wait For Backup To Complete
+      cisco.ise.backup_last_status_info:
+        ise_hostname: "{{ ansible_host }}"
+        ise_username: "{{ ise_username }}"
+        ise_password: "{{ ise_password }}"
+        ise_verify: false
+      register: backup_status
+      until: backup_status.ise_response.status != 'IN_PROGRESS'
+      retries: 360
+      delay: 10
+      failed_when: backup_status.ise_response.justComplete != 'yes'
+
+    - name: Print Backup Results
+      ansible.builtin.debug:
+        msg: "{{ backup_status }}"
